@@ -1,0 +1,154 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+    /* Navy dark background */
+    --background: 0.18 0.025 240;
+    --foreground: 0.97 0.01 230;
+    --card: 0.24 0.03 240;
+    --card-foreground: 0.97 0.01 230;
+    --popover: 0.2 0.04 240;
+    --popover-foreground: 0.97 0.01 230;
+    --primary: 0.62 0.12 240;
+    --primary-foreground: 0.97 0.01 230;
+    --secondary: 0.28 0.04 240;
+    --secondary-foreground: 0.82 0.02 230;
+    --muted: 0.28 0.03 240;
+    --muted-foreground: 0.65 0.02 230;
+    --accent: 0.62 0.12 240;
+    --accent-foreground: 0.97 0.01 230;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.35 0.04 240;
+    --input: 0.3 0.04 240;
+    --ring: 0.62 0.12 240;
+    --chart-1: 0.72 0.15 55;
+    --chart-2: 0.62 0.12 240;
+    --chart-3: 0.67 0.15 155;
+    --chart-4: 0.75 0.1 200;
+    --chart-5: 0.8 0.08 280;
+    --sidebar: 0.2 0.04 240;
+    --sidebar-foreground: 0.97 0.01 230;
+    --sidebar-primary: 0.62 0.12 240;
+    --sidebar-primary-foreground: 0.97 0.01 230;
+    --sidebar-accent: 0.28 0.04 240;
+    --sidebar-accent-foreground: 0.82 0.02 230;
+    --sidebar-border: 0.35 0.04 240;
+    --sidebar-ring: 0.62 0.12 240;
+    /* Custom tokens */
+    --weather-orange: oklch(0.72 0.15 55);
+    --weather-orange-light: oklch(0.78 0.13 60);
+    --weather-blue-deep: oklch(0.22 0.07 240);
+    --weather-blue-mid: oklch(0.3 0.09 240);
+    --chat-bubble-out: oklch(0.63 0.15 155);
+    --chat-bubble-in: oklch(0.92 0.01 230);
+    --chat-bubble-in-text: oklch(0.18 0.03 240);
+    --chat-overlay-bg: rgba(14, 22, 34, 0.92);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", sans-serif;
+  }
+}
+
+/* Rain animation */
+@keyframes rainFall {
+  0% {
+    transform: translateY(-120%) translateX(0px);
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.45;
+  }
+  95% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(120vh) translateX(80px);
+    opacity: 0;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.rain-streak {
+  position: absolute;
+  width: 1.5px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(174, 214, 241, 0.5),
+    transparent
+  );
+  border-radius: 999px;
+  animation: rainFall linear infinite;
+  transform: rotate(15deg);
+  transform-origin: top center;
+}
+
+.weather-icon-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.messaging-overlay-enter {
+  animation: fadeInUp 0.35s ease-out forwards;
+}
+
+.forecast-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.forecast-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
