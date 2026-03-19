@@ -7,9 +7,13 @@ import Time "mo:core/Time";
 import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
+import Migration "migration";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
+import MixinStorage "blob-storage/Mixin";
 
+// IMPORTANT: See migration.mo for upgrade migration
+(with migration = Migration.run)
 actor {
   // Core Types
   public type StoredMessage = {
@@ -38,6 +42,16 @@ actor {
     avatar : Text;
   };
 
+  public type UserStatus = {
+    isOnline : Bool;
+    lastSeen : Time.Time;
+  };
+
+  public type TypingStatus = {
+    isTyping : Bool;
+    updatedAt : Time.Time;
+  };
+
   module Message {
     public func compare(a : Message, b : Message) : Order.Order {
       Int.compare(a.timestamp, b.timestamp);
@@ -51,10 +65,16 @@ actor {
   };
 
   // State
+  include MixinStorage();
+
   let messages = List.empty<StoredMessage>();
   let userProfiles = Map.empty<Principal, UserProfile>();
   // readTimestamps["senderPrincipal_recipientPrincipal"] = last time recipient read msgs from sender
   let readTimestamps = Map.empty<Text, Time.Time>();
+
+  // New state for online status and typing indicator
+  let userStatus = Map.empty<Principal, UserStatus>();
+  let typingStatus = Map.empty<Text, TypingStatus>();
 
   // Authorization State
   let accessControlState = AccessControl.initState();
@@ -196,4 +216,89 @@ actor {
       accessControlState.userRoles.add(caller, #user);
     };
   };
+
+  ////// NEW FUNCTIONALITY //////
+
+  // Online Status + Last Seen
+  public shared ({ caller }) func setOnlineStatus(isOnline : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set online status");
+    };
+
+    let currentTime = Time.now();
+    let currentStatus = {
+      isOnline;
+      lastSeen = currentTime;
+    };
+
+    userStatus.add(caller, currentStatus);
+  };
+
+  public query ({ caller }) func getUserStatuses(users : [Principal]) : async [(Principal, UserStatus)] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get user statuses");
+    };
+
+    let now = Time.now();
+
+    users.map(
+      func(user) {
+        switch (userStatus.get(user)) {
+          case (?status) {
+            let adjustedStatus = if (status.isOnline and now - status.lastSeen > 60000000000) {
+              // Set isOnline to false if last update older than 1 min
+              { status with isOnline = false };
+            } else {
+              status;
+            };
+
+            (user, adjustedStatus);
+          };
+          case (null) {
+            // Default to offline status
+            (user, { isOnline = false; lastSeen = now });
+          };
+        };
+      }
+    );
+  };
+
+  // Typing Status
+  public shared ({ caller }) func setTyping(recipient : Principal, isTyping : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set typing status");
+    };
+
+    let currentTime = Time.now();
+    let key = caller.toText() # "_" # recipient.toText();
+
+    let typingInfo = {
+      isTyping;
+      updatedAt = currentTime;
+    };
+
+    typingStatus.add(key, typingInfo);
+  };
+
+  public query ({ caller }) func getTypingStatus(from : Principal) : async Bool {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get typing status");
+    };
+
+    let currentTime = Time.now();
+    let key = from.toText() # "_" # caller.toText();
+
+    switch (typingStatus.get(key)) {
+      case (?typing) {
+        if (typing.isTyping and currentTime - typing.updatedAt <= 5000000000) {
+          // Only true if updated within last 5 seconds
+          true;
+        } else {
+          false;
+        };
+      };
+      case (null) { false };
+    };
+  };
 };
+

@@ -7,17 +7,22 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-export interface Message {
-    content: string;
-    recipient: Principal;
-    sender: Principal;
-    timestamp: Time;
-}
-export type Time = bigint;
 export interface Conversation {
     lastMessageTimestamp: Time;
     lastMessagePreview: string;
     otherParty: Principal;
+}
+export type Time = bigint;
+export interface Message {
+    content: string;
+    recipient: Principal;
+    isRead: boolean;
+    sender: Principal;
+    timestamp: Time;
+}
+export interface UserStatus {
+    isOnline: boolean;
+    lastSeen: Time;
 }
 export interface UserProfile {
     displayName: string;
@@ -35,9 +40,14 @@ export interface backendInterface {
     getCallerUserRole(): Promise<UserRole>;
     getConversations(): Promise<Array<Conversation>>;
     getMessages(conversationWith: Principal): Promise<Array<Message>>;
+    getTypingStatus(from: Principal): Promise<boolean>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getUserStatuses(users: Array<Principal>): Promise<Array<[Principal, UserStatus]>>;
     isCallerAdmin(): Promise<boolean>;
+    markAsRead(sender: Principal): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     sendMessage(recipient: Principal, content: string): Promise<void>;
+    setOnlineStatus(isOnline: boolean): Promise<void>;
+    setTyping(recipient: Principal, isTyping: boolean): Promise<void>;
     verifySecret(secret: string): Promise<boolean>;
 }

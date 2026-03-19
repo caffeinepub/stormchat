@@ -18,6 +18,7 @@ export interface Conversation {
 export interface Message {
   'content' : string,
   'recipient' : Principal,
+  'isRead' : boolean,
   'sender' : Principal,
   'timestamp' : Time,
 }
@@ -26,7 +27,34 @@ export interface UserProfile { 'displayName' : string, 'avatar' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface UserStatus { 'isOnline' : boolean, 'lastSeen' : Time }
+export interface _CaffeineStorageCreateCertificateResult {
+  'method' : string,
+  'blob_hash' : string,
+}
+export interface _CaffeineStorageRefillInformation {
+  'proposed_top_up_amount' : [] | [bigint],
+}
+export interface _CaffeineStorageRefillResult {
+  'success' : [] | [boolean],
+  'topped_up_amount' : [] | [bigint],
+}
 export interface _SERVICE {
+  '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
+  '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
+  '_caffeineStorageConfirmBlobDeletion' : ActorMethod<
+    [Array<Uint8Array>],
+    undefined
+  >,
+  '_caffeineStorageCreateCertificate' : ActorMethod<
+    [string],
+    _CaffeineStorageCreateCertificateResult
+  >,
+  '_caffeineStorageRefillCashier' : ActorMethod<
+    [[] | [_CaffeineStorageRefillInformation]],
+    _CaffeineStorageRefillResult
+  >,
+  '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'getAllUsers' : ActorMethod<[], Array<[Principal, UserProfile]>>,
@@ -34,10 +62,18 @@ export interface _SERVICE {
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getConversations' : ActorMethod<[], Array<Conversation>>,
   'getMessages' : ActorMethod<[Principal], Array<Message>>,
+  'getTypingStatus' : ActorMethod<[Principal], boolean>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getUserStatuses' : ActorMethod<
+    [Array<Principal>],
+    Array<[Principal, UserStatus]>
+  >,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'markAsRead' : ActorMethod<[Principal], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'sendMessage' : ActorMethod<[Principal, string], undefined>,
+  'setOnlineStatus' : ActorMethod<[boolean], undefined>,
+  'setTyping' : ActorMethod<[Principal, boolean], undefined>,
   'verifySecret' : ActorMethod<[string], boolean>,
 }
 export declare const idlService: IDL.ServiceClass;

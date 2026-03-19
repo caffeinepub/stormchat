@@ -7,8 +7,12 @@ import {
   useGetAllUsers,
   useGetConversations,
   useGetMessages,
+  useGetTypingStatus,
+  useGetUserStatuses,
   useMarkAsRead,
   useSendMessage,
+  useSetOnlineStatus,
+  useSetTyping,
 } from "@/hooks/useQueries";
 import { StorageClient } from "@/utils/StorageClient";
 import { HttpAgent } from "@icp-sdk/core/agent";
@@ -50,6 +54,19 @@ function formatConvTime(ts: bigint) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatLastSeen(nanoTs: bigint): string {
+  const ms = Number(nanoTs / 1_000_000n);
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "offline";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 60_000) return "just now";
+  if (d.toDateString() === now.toDateString()) {
+    return `last seen ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  return `last seen ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
 }
 
 function FileMessageBubble({
@@ -151,6 +168,7 @@ export default function MessagingOverlay({
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: conversations = [] } = useGetConversations(!!profile);
   const { data: messages = [] } = useGetMessages(
@@ -160,8 +178,56 @@ export default function MessagingOverlay({
   const { data: allUsers = [] } = useGetAllUsers();
   const sendMessage = useSendMessage();
   const markAsRead = useMarkAsRead();
+  const setOnlineStatus = useSetOnlineStatus();
+  const setTyping = useSetTyping();
+
+  // Fetch typing status for selected party
+  const { data: isPartnerTyping = false } = useGetTypingStatus(
+    selectedParty,
+    !!profile && !!selectedParty,
+  );
+
+  // Fetch statuses for selected party (for online/last seen in header)
+  const selectedPartyArr: Principal[] = selectedParty ? [selectedParty] : [];
+  const { data: selectedPartyStatuses = [] } = useGetUserStatuses(
+    selectedPartyArr,
+    !!profile && !!selectedParty,
+  );
+
+  // Fetch statuses for all conversation participants (for sidebar dots)
+  const conversationPrincipals: Principal[] = conversations.map(
+    (c) => c.otherParty,
+  );
+  const { data: allConvStatuses = [] } = useGetUserStatuses(
+    conversationPrincipals,
+    !!profile && conversationPrincipals.length > 0,
+  );
 
   const selfPrincipal = identity?.getPrincipal().toString() ?? "";
+
+  // Helper: get UserStatus for a principal
+  function getStatusFor(
+    statuses: Array<[Principal, { isOnline: boolean; lastSeen: bigint }]>,
+    principal: Principal,
+  ) {
+    const entry = statuses.find(([p]) => p.toString() === principal.toString());
+    return entry ? entry[1] : null;
+  }
+
+  // Heartbeat: mark self as online every 30s while profile is set
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally runs only when profile presence changes
+  useEffect(() => {
+    if (!profile) return;
+    setOnlineStatus.mutate(true);
+    const interval = setInterval(() => {
+      setOnlineStatus.mutate(true);
+    }, 30_000);
+    return () => {
+      clearInterval(interval);
+      setOnlineStatus.mutate(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!profile]);
 
   useEffect(() => {
     if (callerProfile && !profile) {
@@ -236,9 +302,29 @@ export default function MessagingOverlay({
     e.target.value = "";
   }
 
+  function handleMessageInput(e: React.ChangeEvent<HTMLInputElement>) {
+    setMessageText(e.target.value);
+    if (!selectedParty) return;
+
+    // Signal typing = true
+    setTyping.mutate({ recipient: selectedParty, isTyping: true });
+
+    // Debounce: after 1500ms idle, signal typing = false
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      if (selectedParty) {
+        setTyping.mutate({ recipient: selectedParty, isTyping: false });
+      }
+    }, 1500);
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if ((!messageText.trim() && !attachedFile) || !selectedParty) return;
+
+    // Stop typing indicator immediately on send
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    setTyping.mutate({ recipient: selectedParty, isTyping: false });
 
     let content = messageText.trim();
 
@@ -281,6 +367,33 @@ export default function MessagingOverlay({
   });
 
   const isSending = isUploading;
+
+  // Determine chat header status text
+  const selectedPartyStatus = selectedParty
+    ? getStatusFor(selectedPartyStatuses, selectedParty)
+    : null;
+
+  let headerStatusText = "Online";
+  let headerStatusStyle: React.CSSProperties = {
+    color: "#4ade80",
+    textShadow: "0 0 8px rgba(74,222,128,0.5)",
+  };
+
+  if (isPartnerTyping) {
+    headerStatusText = "typing...";
+    headerStatusStyle = { color: "#86efac" };
+  } else if (selectedPartyStatus) {
+    if (selectedPartyStatus.isOnline) {
+      headerStatusText = "Online";
+      headerStatusStyle = {
+        color: "#4ade80",
+        textShadow: "0 0 8px rgba(74,222,128,0.5)",
+      };
+    } else {
+      headerStatusText = formatLastSeen(selectedPartyStatus.lastSeen);
+      headerStatusStyle = { color: "#60a5fa" };
+    }
+  }
 
   if (!profile) {
     return (
@@ -376,6 +489,11 @@ export default function MessagingOverlay({
                   const contactProfile = userEntry?.[1];
                   const isSelected =
                     selectedParty?.toString() === conv.otherParty.toString();
+                  const convStatus = getStatusFor(
+                    allConvStatuses,
+                    conv.otherParty,
+                  );
+                  const isOnline = convStatus?.isOnline ?? false;
                   return (
                     <button
                       key={conv.otherParty.toString()}
@@ -413,14 +531,25 @@ export default function MessagingOverlay({
                         >
                           {contactProfile?.avatar ?? "👤"}
                         </div>
-                        <span
-                          className="absolute bottom-0 right-0 w-3 h-3 rounded-full"
-                          style={{
-                            background: "#22c55e",
-                            border: "2px solid rgba(14,22,34,0.9)",
-                            boxShadow: "0 0 8px #22c55e",
-                          }}
-                        />
+                        {isOnline && (
+                          <span
+                            className="absolute bottom-0 right-0 w-3 h-3 rounded-full"
+                            style={{
+                              background: "#22c55e",
+                              border: "2px solid rgba(14,22,34,0.9)",
+                              boxShadow: "0 0 8px #22c55e",
+                            }}
+                          />
+                        )}
+                        {!isOnline && convStatus && (
+                          <span
+                            className="absolute bottom-0 right-0 w-3 h-3 rounded-full"
+                            style={{
+                              background: "#6b7280",
+                              border: "2px solid rgba(14,22,34,0.9)",
+                            }}
+                          />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between">
@@ -502,12 +631,9 @@ export default function MessagingOverlay({
                       </p>
                       <p
                         className="text-xs font-medium"
-                        style={{
-                          color: "#4ade80",
-                          textShadow: "0 0 8px rgba(74,222,128,0.5)",
-                        }}
+                        style={headerStatusStyle}
                       >
-                        Online
+                        {headerStatusText}
                       </p>
                     </div>
                   </div>
@@ -690,7 +816,7 @@ export default function MessagingOverlay({
                       data-ocid="messaging.message.input"
                       type="text"
                       value={messageText}
-                      onChange={(e) => setMessageText(e.target.value)}
+                      onChange={handleMessageInput}
                       placeholder={
                         attachedFile ? "Add a caption…" : "Type a message…"
                       }

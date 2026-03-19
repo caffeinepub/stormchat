@@ -8,6 +8,17 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const _CaffeineStorageCreateCertificateResult = IDL.Record({
+  'method' : IDL.Text,
+  'blob_hash' : IDL.Text,
+});
+export const _CaffeineStorageRefillInformation = IDL.Record({
+  'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+});
+export const _CaffeineStorageRefillResult = IDL.Record({
+  'success' : IDL.Opt(IDL.Bool),
+  'topped_up_amount' : IDL.Opt(IDL.Nat),
+});
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
   'user' : IDL.Null,
@@ -26,11 +37,42 @@ export const Conversation = IDL.Record({
 export const Message = IDL.Record({
   'content' : IDL.Text,
   'recipient' : IDL.Principal,
+  'isRead' : IDL.Bool,
   'sender' : IDL.Principal,
   'timestamp' : Time,
 });
+export const UserStatus = IDL.Record({
+  'isOnline' : IDL.Bool,
+  'lastSeen' : Time,
+});
 
 export const idlService = IDL.Service({
+  '_caffeineStorageBlobIsLive' : IDL.Func(
+      [IDL.Vec(IDL.Nat8)],
+      [IDL.Bool],
+      ['query'],
+    ),
+  '_caffeineStorageBlobsToDelete' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      ['query'],
+    ),
+  '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      [],
+      [],
+    ),
+  '_caffeineStorageCreateCertificate' : IDL.Func(
+      [IDL.Text],
+      [_CaffeineStorageCreateCertificateResult],
+      [],
+    ),
+  '_caffeineStorageRefillCashier' : IDL.Func(
+      [IDL.Opt(_CaffeineStorageRefillInformation)],
+      [_CaffeineStorageRefillResult],
+      [],
+    ),
+  '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'getAllUsers' : IDL.Func(
@@ -42,20 +84,40 @@ export const idlService = IDL.Service({
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
   'getMessages' : IDL.Func([IDL.Principal], [IDL.Vec(Message)], ['query']),
+  'getTypingStatus' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
+  'getUserStatuses' : IDL.Func(
+      [IDL.Vec(IDL.Principal)],
+      [IDL.Vec(IDL.Tuple(IDL.Principal, UserStatus))],
+      ['query'],
+    ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'markAsRead' : IDL.Func([IDL.Principal], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'sendMessage' : IDL.Func([IDL.Principal, IDL.Text], [], []),
+  'setOnlineStatus' : IDL.Func([IDL.Bool], [], []),
+  'setTyping' : IDL.Func([IDL.Principal, IDL.Bool], [], []),
   'verifySecret' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
 });
 
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const _CaffeineStorageCreateCertificateResult = IDL.Record({
+    'method' : IDL.Text,
+    'blob_hash' : IDL.Text,
+  });
+  const _CaffeineStorageRefillInformation = IDL.Record({
+    'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+  });
+  const _CaffeineStorageRefillResult = IDL.Record({
+    'success' : IDL.Opt(IDL.Bool),
+    'topped_up_amount' : IDL.Opt(IDL.Nat),
+  });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
     'user' : IDL.Null,
@@ -74,11 +136,39 @@ export const idlFactory = ({ IDL }) => {
   const Message = IDL.Record({
     'content' : IDL.Text,
     'recipient' : IDL.Principal,
+    'isRead' : IDL.Bool,
     'sender' : IDL.Principal,
     'timestamp' : Time,
   });
+  const UserStatus = IDL.Record({ 'isOnline' : IDL.Bool, 'lastSeen' : Time });
   
   return IDL.Service({
+    '_caffeineStorageBlobIsLive' : IDL.Func(
+        [IDL.Vec(IDL.Nat8)],
+        [IDL.Bool],
+        ['query'],
+      ),
+    '_caffeineStorageBlobsToDelete' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        ['query'],
+      ),
+    '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        [],
+        [],
+      ),
+    '_caffeineStorageCreateCertificate' : IDL.Func(
+        [IDL.Text],
+        [_CaffeineStorageCreateCertificateResult],
+        [],
+      ),
+    '_caffeineStorageRefillCashier' : IDL.Func(
+        [IDL.Opt(_CaffeineStorageRefillInformation)],
+        [_CaffeineStorageRefillResult],
+        [],
+      ),
+    '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'getAllUsers' : IDL.Func(
@@ -90,14 +180,23 @@ export const idlFactory = ({ IDL }) => {
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
     'getMessages' : IDL.Func([IDL.Principal], [IDL.Vec(Message)], ['query']),
+    'getTypingStatus' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
+    'getUserStatuses' : IDL.Func(
+        [IDL.Vec(IDL.Principal)],
+        [IDL.Vec(IDL.Tuple(IDL.Principal, UserStatus))],
+        ['query'],
+      ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'markAsRead' : IDL.Func([IDL.Principal], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'sendMessage' : IDL.Func([IDL.Principal, IDL.Text], [], []),
+    'setOnlineStatus' : IDL.Func([IDL.Bool], [], []),
+    'setTyping' : IDL.Func([IDL.Principal, IDL.Bool], [], []),
     'verifySecret' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
   });
 };

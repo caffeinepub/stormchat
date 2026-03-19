@@ -1,6 +1,6 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Message, UserProfile } from "../backend.d";
+import type { Message, UserProfile, UserStatus } from "../backend.d";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
@@ -118,6 +118,7 @@ export function useSendMessage() {
           recipient,
           timestamp: BigInt(Date.now()) * 1_000_000n,
           content,
+          isRead: false,
         };
         queryClient.setQueryData<Message[]>(
           ["messages", recipient.toString()],
@@ -148,8 +149,7 @@ export function useMarkAsRead() {
   return useMutation({
     mutationFn: async (sender: Principal) => {
       if (!actor) throw new Error("No actor");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (actor as any).markAsRead(sender);
+      return actor.markAsRead(sender);
     },
   });
 }
@@ -173,5 +173,61 @@ export function useGetUserProfile(principal: Principal | null) {
       return actor.getUserProfile(principal);
     },
     enabled: !!actor && !isFetching && !!principal,
+  });
+}
+
+export function useGetTypingStatus(from: Principal | null, enabled: boolean) {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["typingStatus", from?.toString()],
+    queryFn: async () => {
+      if (!actor || !from) return false;
+      return actor.getTypingStatus(from);
+    },
+    enabled: !!actor && !isFetching && !!from && enabled,
+    refetchInterval: enabled && from ? 2000 : false,
+  });
+}
+
+export function useGetUserStatuses(users: Principal[], enabled: boolean) {
+  const { actor, isFetching } = useActor();
+  const key = users.map((u) => u.toString()).join(",");
+  return useQuery<Array<[Principal, UserStatus]>>({
+    queryKey: ["userStatuses", key],
+    queryFn: async () => {
+      if (!actor || users.length === 0) return [];
+      return actor.getUserStatuses(users);
+    },
+    enabled: !!actor && !isFetching && users.length > 0 && enabled,
+    refetchInterval: enabled && users.length > 0 ? 10000 : false,
+  });
+}
+
+export function useSetOnlineStatus() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (isOnline: boolean) => {
+      if (!actor) return;
+      await actor.setOnlineStatus(isOnline);
+    },
+    onError: () => {
+      // silent fail
+    },
+  });
+}
+
+export function useSetTyping() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async ({
+      recipient,
+      isTyping,
+    }: { recipient: Principal; isTyping: boolean }) => {
+      if (!actor) return;
+      await actor.setTyping(recipient, isTyping);
+    },
+    onError: () => {
+      // silent fail
+    },
   });
 }
