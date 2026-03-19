@@ -1,7 +1,8 @@
 import { useActor } from "@/hooks/useActor";
-import { useVerifySecret } from "@/hooks/useQueries";
 import { Cloud, Lock, MoreVertical, Search, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+const ACCESS_CODE = "loga";
 
 interface NavBarProps {
   onUnlocked: () => void;
@@ -13,8 +14,7 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
   const [error, setError] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   const accessInputId = "nav-access-code";
-  const verifySecret = useVerifySecret();
-  const { actor, isFetching } = useActor();
+  const { isFetching } = useActor();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -26,31 +26,20 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  async function handleAccessCodeSubmit(e: React.FormEvent) {
+  function handleAccessCodeSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!accessCode.trim()) return;
-    try {
-      const valid = await verifySecret.mutateAsync(accessCode.trim());
-      if (valid) {
-        setMenuOpen(false);
-        setAccessCode("");
-        setError("");
-        onUnlocked();
-      } else {
-        setError("Invalid access code");
-      }
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : typeof err === "string"
-            ? err
-            : "Connection error";
-      setError(msg);
+    const trimmed = accessCode.trim();
+    if (!trimmed) return;
+
+    if (trimmed === ACCESS_CODE) {
+      setMenuOpen(false);
+      setAccessCode("");
+      setError("");
+      onUnlocked();
+    } else {
+      setError("Invalid access code");
     }
   }
-
-  const isSubmitDisabled = verifySecret.isPending || isFetching || !actor;
 
   return (
     <header className="fixed top-0 left-0 right-0 z-40">
@@ -63,15 +52,13 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
         }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          {/* Logo */}
           <div className="flex items-center gap-2 shrink-0">
             <Cloud className="w-7 h-7 text-blue-300" />
             <span className="text-white font-bold text-lg tracking-tight">
-              StormChat
+              Storm
             </span>
           </div>
 
-          {/* Nav Links */}
           <nav className="hidden md:flex items-center gap-6">
             {["Home", "Forecast", "Maps", "About"].map((link) => (
               <button
@@ -85,7 +72,6 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
             ))}
           </nav>
 
-          {/* Right Controls */}
           <div className="flex items-center gap-2">
             <div className="relative hidden sm:flex items-center">
               <Search className="absolute left-3 w-4 h-4 text-blue-300 pointer-events-none" />
@@ -105,7 +91,6 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
               <Sun className="w-4 h-4 text-yellow-300" />
             </button>
 
-            {/* Three-dot menu — secret entry */}
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
@@ -165,15 +150,10 @@ export default function NavBar({ onUnlocked }: NavBarProps) {
                         <button
                           data-ocid="nav.access_code.submit_button"
                           type="submit"
-                          disabled={isSubmitDisabled}
-                          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
                           style={{ minHeight: "44px" }}
                         >
-                          {isFetching
-                            ? "Connecting..."
-                            : verifySecret.isPending
-                              ? "…"
-                              : "Go"}
+                          {isFetching ? "Go" : "Go"}
                         </button>
                       </div>
                       {error && (

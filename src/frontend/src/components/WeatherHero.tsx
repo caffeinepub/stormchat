@@ -1,10 +1,10 @@
-const rainStreaks = Array.from({ length: 30 }, (_, i) => ({
+const rainStreaks = Array.from({ length: 40 }, (_, i) => ({
   id: i,
-  left: `${(i * 3.4 + Math.sin(i) * 15) % 100}%`,
+  left: `${(i * 2.6 + Math.sin(i) * 15) % 100}%`,
   height: `${60 + ((i * 17) % 80)}px`,
-  delay: `${(i * 0.28) % 4}s`,
-  duration: `${0.8 + ((i * 0.13) % 1.2)}s`,
-  opacity: 0.3 + (i % 3) * 0.12,
+  delay: `${(i * 0.22) % 4}s`,
+  duration: `${0.7 + ((i * 0.13) % 1.2)}s`,
+  opacity: 0.25 + (i % 4) * 0.1,
 }));
 
 export default function WeatherHero() {
@@ -13,45 +13,88 @@ export default function WeatherHero() {
       className="relative min-h-[92vh] flex flex-col items-center justify-center overflow-hidden pt-16"
       style={{
         background:
-          "linear-gradient(135deg, oklch(0.52 0.16 45) 0%, oklch(0.42 0.13 50) 25%, oklch(0.30 0.09 245) 65%, oklch(0.18 0.07 240) 100%)",
+          "linear-gradient(160deg, oklch(0.18 0.18 280) 0%, oklch(0.20 0.16 260) 30%, oklch(0.22 0.15 240) 60%, oklch(0.12 0.08 200) 100%)",
       }}
     >
-      {/* Clouds - background shapes */}
+      {/* Aurora orb — top-left */}
+      <div
+        className="aurora-orb absolute pointer-events-none"
+        style={{
+          width: 600,
+          height: 600,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(ellipse at center, rgba(80,100,220,0.22) 0%, rgba(60,80,200,0.10) 45%, transparent 70%)",
+          top: "-120px",
+          left: "-150px",
+          filter: "blur(30px)",
+        }}
+      />
+
+      {/* Cloud glow backdrop */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          width: 340,
+          height: 160,
+          background:
+            "radial-gradient(ellipse at center, rgba(130,170,255,0.18) 0%, transparent 70%)",
+          top: "calc(50% - 180px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          filter: "blur(24px)",
+        }}
+      />
+
+      {/* Lightning bolt SVG */}
+      <div
+        className="lightning-bolt absolute pointer-events-none"
+        style={{ top: "12%", right: "18%", opacity: 0 }}
+      >
+        <svg
+          width="42"
+          height="120"
+          viewBox="0 0 42 120"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          role="presentation"
+          aria-hidden="true"
+        >
+          <polyline
+            points="28,0 14,50 24,50 6,120 34,44 20,44"
+            fill="rgba(200,230,255,0.9)"
+            stroke="rgba(180,220,255,0.7)"
+            strokeWidth="1"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+
+      {/* Background cloud blobs */}
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{ opacity: 0.18 }}
+        style={{ opacity: 0.14 }}
       >
         <div
           className="absolute rounded-full"
           style={{
-            width: 400,
+            width: 460,
             height: 180,
-            background: "rgba(255,255,255,0.6)",
+            background: "rgba(255,255,255,0.7)",
+            filter: "blur(50px)",
+            top: "15%",
+            left: "5%",
+          }}
+        />
+        <div
+          className="absolute rounded-full"
+          style={{
+            width: 300,
+            height: 130,
+            background: "rgba(255,255,255,0.55)",
             filter: "blur(40px)",
-            top: "18%",
-            left: "8%",
-          }}
-        />
-        <div
-          className="absolute rounded-full"
-          style={{
-            width: 280,
-            height: 120,
-            background: "rgba(255,255,255,0.5)",
-            filter: "blur(35px)",
-            top: "28%",
-            right: "10%",
-          }}
-        />
-        <div
-          className="absolute rounded-full"
-          style={{
-            width: 500,
-            height: 200,
-            background: "rgba(255,200,120,0.4)",
-            filter: "blur(60px)",
-            bottom: "30%",
-            left: "15%",
+            top: "24%",
+            right: "8%",
           }}
         />
       </div>
@@ -76,7 +119,10 @@ export default function WeatherHero() {
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center text-center px-4">
-        <p className="text-blue-200 text-xs tracking-widest uppercase mb-3 opacity-80">
+        <p
+          className="text-blue-300 text-xs tracking-widest uppercase mb-3"
+          style={{ opacity: 0.7 }}
+        >
           40.7128° N, 74.0060° W
         </p>
 
@@ -85,19 +131,42 @@ export default function WeatherHero() {
           style={{
             fontSize: "clamp(2rem, 6vw, 3.5rem)",
             color: "white",
-            textShadow: "0 2px 24px rgba(0,0,0,0.5)",
+            textShadow:
+              "0 2px 32px rgba(80,130,255,0.45), 0 2px 8px rgba(0,0,0,0.6)",
             letterSpacing: "0.08em",
           }}
         >
           NEW YORK, US
         </h1>
 
-        <p className="text-blue-100 text-sm mb-8 opacity-80">
-          18°C  ·  Thursday, Mar 18  ·  14:32 UTC
+        <p className="text-blue-200 text-sm mb-6" style={{ opacity: 0.75 }}>
+          18°C · Thursday, Mar 18 · 14:32 UTC
         </p>
 
-        {/* Weather icon */}
-        <div className="weather-icon-float mb-4">
+        {/* Big glowing temperature */}
+        <div
+          className="font-bold text-white mb-4 leading-none"
+          style={{
+            fontSize: "clamp(5rem, 18vw, 10rem)",
+            textShadow:
+              "0 0 60px rgba(100,180,255,0.5), 0 0 120px rgba(80,140,255,0.3), 0 4px 24px rgba(0,0,0,0.5)",
+            letterSpacing: "-0.03em",
+          }}
+        >
+          18°
+        </div>
+
+        {/* Weather icon with glow */}
+        <div className="weather-icon-float mb-3 relative">
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse at center, rgba(130,180,255,0.22) 0%, transparent 70%)",
+              filter: "blur(16px)",
+              transform: "scale(1.5)",
+            }}
+          />
           <svg
             width="110"
             height="80"
@@ -113,8 +182,8 @@ export default function WeatherHero() {
               cy="32"
               rx="38"
               ry="22"
-              fill="rgba(255,255,255,0.25)"
-              stroke="rgba(255,255,255,0.6)"
+              fill="rgba(255,255,255,0.22)"
+              stroke="rgba(255,255,255,0.55)"
               strokeWidth="2"
             />
             <ellipse
@@ -122,8 +191,8 @@ export default function WeatherHero() {
               cy="40"
               rx="24"
               ry="16"
-              fill="rgba(255,255,255,0.2)"
-              stroke="rgba(255,255,255,0.5)"
+              fill="rgba(255,255,255,0.18)"
+              stroke="rgba(255,255,255,0.45)"
               strokeWidth="2"
             />
             <ellipse
@@ -131,8 +200,8 @@ export default function WeatherHero() {
               cy="40"
               rx="20"
               ry="14"
-              fill="rgba(255,255,255,0.2)"
-              stroke="rgba(255,255,255,0.5)"
+              fill="rgba(255,255,255,0.18)"
+              stroke="rgba(255,255,255,0.45)"
               strokeWidth="2"
             />
             <line
@@ -176,65 +245,44 @@ export default function WeatherHero() {
 
         <p
           className="text-2xl font-semibold text-white mb-8"
-          style={{ textShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
+          style={{ textShadow: "0 2px 16px rgba(100,180,255,0.4)" }}
         >
           Light Rain
         </p>
 
-        {/* Stats row */}
+        {/* Stats bar — glassmorphism */}
         <div
           className="flex items-center gap-4 sm:gap-8 px-6 py-3 rounded-2xl text-sm text-blue-100"
           style={{
-            background: "rgba(255,255,255,0.1)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: "rgba(255,255,255,0.08)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(100,180,255,0.3)",
+            boxShadow: "0 4px 30px rgba(60,100,200,0.15)",
           }}
         >
           <div className="flex flex-col items-center">
             <span className="text-xs text-blue-300 mb-0.5">Wind</span>
             <span className="font-semibold">12 km/h</span>
           </div>
-          <div className="w-px h-8 bg-white/20" />
+          <div
+            className="w-px h-8"
+            style={{ background: "rgba(100,180,255,0.2)" }}
+          />
           <div className="flex flex-col items-center">
             <span className="text-xs text-blue-300 mb-0.5">Humidity</span>
             <span className="font-semibold">78%</span>
           </div>
-          <div className="w-px h-8 bg-white/20" />
+          <div
+            className="w-px h-8"
+            style={{ background: "rgba(100,180,255,0.2)" }}
+          />
           <div className="flex flex-col items-center">
             <span className="text-xs text-blue-300 mb-0.5">Pressure</span>
             <span className="font-semibold">1013 hPa</span>
           </div>
         </div>
       </div>
-
-      {/* Floating gear button */}
-      <button
-        type="button"
-        className="absolute right-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center"
-        style={{
-          background: "rgba(255,255,255,0.15)",
-          backdropFilter: "blur(8px)",
-          border: "1px solid rgba(255,255,255,0.25)",
-        }}
-        aria-label="Settings"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="rgba(255,255,255,0.8)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          role="img"
-          aria-label="Settings gear icon"
-        >
-          <title>Settings gear icon</title>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
 
       {/* Bottom wave separator */}
       <div className="absolute bottom-0 left-0 right-0">
@@ -248,7 +296,7 @@ export default function WeatherHero() {
         >
           <path
             d="M0 60V30C240 0 480 60 720 30C960 0 1200 60 1440 30V60H0Z"
-            fill="white"
+            fill="oklch(0.13 0.10 240)"
           />
         </svg>
       </div>

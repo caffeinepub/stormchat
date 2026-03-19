@@ -20,12 +20,12 @@ export default function FooterSection() {
               stroke="#3A86C6"
               strokeWidth="2"
               role="img"
-              aria-label="StormChat cloud logo"
+              aria-label="Storm cloud logo"
             >
-              <title>StormChat cloud logo</title>
+              <title>Storm cloud logo</title>
               <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z" />
             </svg>
-            <span className="font-bold text-gray-800">StormChat</span>
+            <span className="font-bold text-gray-800">Storm</span>
           </div>
           <p className="text-sm text-gray-500 leading-relaxed">
             Real-time weather data and forecasts for cities around the world.

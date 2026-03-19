@@ -12,11 +12,19 @@ import AccessControl "authorization/access-control";
 
 actor {
   // Core Types
+  public type StoredMessage = {
+    sender : Principal;
+    recipient : Principal;
+    timestamp : Time.Time;
+    content : Text;
+  };
+
   public type Message = {
     sender : Principal;
     recipient : Principal;
     timestamp : Time.Time;
     content : Text;
+    isRead : Bool;
   };
 
   public type Conversation = {
@@ -43,8 +51,10 @@ actor {
   };
 
   // State
-  let messages = List.empty<Message>();
+  let messages = List.empty<StoredMessage>();
   let userProfiles = Map.empty<Principal, UserProfile>();
+  // readTimestamps["senderPrincipal_recipientPrincipal"] = last time recipient read msgs from sender
+  let readTimestamps = Map.empty<Text, Time.Time>();
 
   // Authorization State
   let accessControlState = AccessControl.initState();
@@ -56,7 +66,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can send messages");
     };
 
-    let newMessage : Message = {
+    let newMessage : StoredMessage = {
       sender = caller;
       recipient;
       timestamp = Time.now();
@@ -64,6 +74,15 @@ actor {
     };
 
     messages.add(newMessage);
+  };
+
+  // Mark all messages from `sender` to caller as read
+  public shared ({ caller }) func markAsRead(sender : Principal) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can mark messages as read");
+    };
+    let key = sender.toText() # "_" # caller.toText();
+    readTimestamps.add(key, Time.now());
   };
 
   public query ({ caller }) func getConversations() : async [Conversation] {
@@ -114,16 +133,35 @@ actor {
       Runtime.trap("Unauthorized: Only users can view messages");
     };
 
-    messages.filter(
+    let outgoingReadKey = caller.toText() # "_" # conversationWith.toText();
+    let outgoingReadTime = readTimestamps.get(outgoingReadKey);
+
+    let rawMessages = messages.filter(
       func(msg) {
         (msg.sender == caller and msg.recipient == conversationWith) or (msg.sender == conversationWith and msg.recipient == caller)
       }
-    ).toArray().sort();
+    ).toArray();
+
+    let enriched = rawMessages.map(
+      func(msg : StoredMessage) : Message {
+        let isRead = if (msg.sender == caller) {
+          switch (outgoingReadTime) {
+            case (?t) { msg.timestamp <= t };
+            case (null) { false };
+          };
+        } else {
+          true;
+        };
+        { sender = msg.sender; recipient = msg.recipient; timestamp = msg.timestamp; content = msg.content; isRead };
+      },
+    );
+
+    enriched.sort();
   };
 
   // Secret Unlock
   public query ({ caller }) func verifySecret(secret : Text) : async Bool {
-    secret == "stormwatch";
+    secret == "loga";
   };
 
   // User Discovery
@@ -135,7 +173,6 @@ actor {
   };
 
   // Core Profile Functions
-  // Allow any authenticated caller to check their own profile (needed before registration)
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Must be logged in");
@@ -150,13 +187,11 @@ actor {
     userProfiles.get(user);
   };
 
-  // Allow any authenticated caller to save their profile (self-registration)
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Must be logged in");
     };
     userProfiles.add(caller, profile);
-    // Auto-register as user if not already registered
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       accessControlState.userRoles.add(caller, #user);
     };

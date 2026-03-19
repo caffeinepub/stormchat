@@ -1,15 +1,25 @@
 import type { Conversation, Message, UserProfile } from "@/backend.d";
+import { loadConfig } from "@/config";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import {
+  decodeFileMessage,
+  encodeFileMessage,
   useGetAllUsers,
   useGetConversations,
   useGetMessages,
+  useMarkAsRead,
   useSendMessage,
 } from "@/hooks/useQueries";
+import { StorageClient } from "@/utils/StorageClient";
+import { HttpAgent } from "@icp-sdk/core/agent";
 import type { Principal } from "@icp-sdk/core/principal";
 import {
   ChevronLeft,
+  Download,
+  ImageIcon,
+  Loader2,
   MoreVertical,
+  Paperclip,
   Phone,
   Plus,
   Search,
@@ -20,6 +30,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import NewChatModal from "./NewChatModal";
 import ProfileSetup from "./ProfileSetup";
+
+// Extend Message with optional isRead field from backend
+type MessageWithRead = Message & { isRead?: boolean; _optimistic?: boolean };
 
 function formatTime(ts: bigint) {
   const ms = Number(ts / 1000000n);
@@ -37,6 +50,79 @@ function formatConvTime(ts: bigint) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function FileMessageBubble({
+  fileUrl,
+  filename,
+}: { fileUrl: string; filename: string }) {
+  const looksLikeImage = /\.(jpe?g|png|gif|webp|svg|bmp|avif)($|\?)/i.test(
+    filename,
+  );
+
+  if (looksLikeImage) {
+    return (
+      <a href={fileUrl} target="_blank" rel="noreferrer">
+        <img
+          src={fileUrl}
+          alt={filename}
+          className="rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
+          style={{ maxWidth: "200px", maxHeight: "200px" }}
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={fileUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-2 text-sm underline underline-offset-2 hover:opacity-80 transition-opacity"
+    >
+      <Download className="w-4 h-4 shrink-0" />
+      <span className="truncate max-w-[160px]">{filename}</span>
+    </a>
+  );
+}
+
+/** Read receipt ticks shown under outgoing messages */
+function ReadTick({
+  isRead,
+  isOptimistic,
+}: { isRead?: boolean; isOptimistic?: boolean }) {
+  if (isOptimistic || !isRead) {
+    return (
+      <span
+        style={{
+          fontSize: "11px",
+          color: "rgba(180,210,180,0.7)",
+          letterSpacing: "-1px",
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+        aria-label="Sent"
+        title="Sent"
+      >
+        ✓
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{
+        fontSize: "11px",
+        color: "#60b4ff",
+        letterSpacing: "-1px",
+        fontWeight: 700,
+        lineHeight: 1,
+      }}
+      aria-label="Seen"
+      title="Seen"
+    >
+      ✓✓
+    </span>
+  );
 }
 
 interface MessagingOverlayProps {
@@ -57,9 +143,14 @@ export default function MessagingOverlay({
   const [messageText, setMessageText] = useState("");
   const [search, setSearch] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
-  // Mobile view: 'list' shows sidebar, 'chat' shows chat panel
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [storageClient, setStorageClient] = useState<StorageClient | null>(
+    null,
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: conversations = [] } = useGetConversations(!!profile);
   const { data: messages = [] } = useGetMessages(
@@ -68,13 +159,49 @@ export default function MessagingOverlay({
   );
   const { data: allUsers = [] } = useGetAllUsers();
   const sendMessage = useSendMessage();
+  const markAsRead = useMarkAsRead();
 
   const selfPrincipal = identity?.getPrincipal().toString() ?? "";
+
+  useEffect(() => {
+    if (callerProfile && !profile) {
+      setProfile(callerProfile);
+    }
+  }, [callerProfile, profile]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadConfig().then((config) => {
+      if (cancelled) return;
+      const agent = new HttpAgent({
+        host: config.backend_host,
+        identity: identity ?? undefined,
+      });
+      const client = new StorageClient(
+        config.bucket_name,
+        config.storage_gateway_url,
+        config.backend_canister_id,
+        config.project_id,
+        agent,
+      );
+      setStorageClient(client);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: ref.current is stable
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: markAsRead.mutate is stable reference
+  useEffect(() => {
+    if (selectedParty && messages.length > 0) {
+      markAsRead.mutate(selectedParty);
+    }
+  }, [selectedParty, messages.length]);
 
   function handleSelectConversation(conv: Conversation) {
     setSelectedParty(conv.otherParty);
@@ -83,6 +210,7 @@ export default function MessagingOverlay({
     );
     setSelectedProfile(userEntry ? userEntry[1] : null);
     setMobileView("chat");
+    markAsRead.mutate(conv.otherParty);
   }
 
   function handleSelectNewChatUser(principal: Principal) {
@@ -93,6 +221,7 @@ export default function MessagingOverlay({
     setSelectedProfile(userEntry ? userEntry[1] : null);
     setShowNewChat(false);
     setMobileView("chat");
+    markAsRead.mutate(principal);
   }
 
   function handleBackToList() {
@@ -101,18 +230,43 @@ export default function MessagingOverlay({
     setSelectedProfile(null);
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setAttachedFile(file);
+    e.target.value = "";
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!messageText.trim() || !selectedParty) return;
-    const text = messageText.trim();
+    if ((!messageText.trim() && !attachedFile) || !selectedParty) return;
+
+    let content = messageText.trim();
+
+    if (attachedFile) {
+      if (!storageClient) return;
+      setIsUploading(true);
+      try {
+        const bytes = new Uint8Array(await attachedFile.arrayBuffer());
+        const { hash } = await storageClient.putFile(bytes);
+        const fileUrl = await storageClient.getDirectURL(hash);
+        content = encodeFileMessage(fileUrl, attachedFile.name);
+      } catch (err) {
+        console.error("Upload failed", err);
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
+      setAttachedFile(null);
+    }
+
     setMessageText("");
     try {
       await sendMessage.mutateAsync({
         recipient: selectedParty,
-        content: text,
+        content,
       });
     } catch {
-      setMessageText(text);
+      if (!attachedFile) setMessageText(content);
     }
   }
 
@@ -126,6 +280,8 @@ export default function MessagingOverlay({
       .includes(search.toLowerCase());
   });
 
+  const isSending = isUploading;
+
   if (!profile) {
     return (
       <OverlayShell onClose={onClose}>
@@ -138,19 +294,35 @@ export default function MessagingOverlay({
     <>
       <OverlayShell onClose={onClose}>
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar — hidden on mobile when chat is open */}
+          {/* Left Sidebar */}
           <div
             className={`${
               mobileView === "chat" ? "hidden" : "flex"
             } md:flex w-full md:w-72 shrink-0 flex-col`}
-            style={{ borderRight: "1px solid rgba(255,255,255,0.1)" }}
+            style={{
+              borderRight: "1px solid rgba(100,150,255,0.12)",
+              background:
+                "linear-gradient(180deg, rgba(20,35,60,0.98), rgba(10,18,32,0.98))",
+            }}
           >
             {/* Sidebar header */}
             <div
               className="flex items-center justify-between p-4"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}
+              style={{
+                borderBottom: "1px solid rgba(100,150,255,0.12)",
+                background:
+                  "linear-gradient(180deg, rgba(25,42,72,0.6), transparent)",
+              }}
             >
-              <span className="font-bold text-white text-base">StormChat</span>
+              <span
+                className="font-bold text-base"
+                style={{
+                  color: "rgba(220,235,255,0.95)",
+                  textShadow: "0 0 20px rgba(100,160,255,0.3)",
+                }}
+              >
+                Storm
+              </span>
               <button
                 type="button"
                 data-ocid="messaging.close_button"
@@ -177,7 +349,7 @@ export default function MessagingOverlay({
                   className="w-full pl-8 pr-3 py-2 rounded-lg text-sm text-white placeholder:text-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   style={{
                     background: "rgba(255,255,255,0.07)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    border: "1px solid rgba(100,150,255,0.18)",
                     fontSize: "16px",
                   }}
                 />
@@ -210,15 +382,18 @@ export default function MessagingOverlay({
                       type="button"
                       data-ocid={`messaging.conversation.item.${idx + 1}`}
                       onClick={() => handleSelectConversation(conv)}
-                      className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-4 py-3 transition-all text-left"
                       style={{
                         background: isSelected
-                          ? "rgba(58,134,198,0.2)"
+                          ? "rgba(59,130,246,0.25)"
                           : "transparent",
                         borderLeft: isSelected
-                          ? "3px solid rgba(58,134,198,0.8)"
+                          ? "3px solid rgba(99,179,237,0.9)"
                           : "3px solid transparent",
                         minHeight: "64px",
+                        boxShadow: isSelected
+                          ? "inset 0 0 20px rgba(59,130,246,0.08)"
+                          : "none",
                       }}
                       onMouseEnter={(e) => {
                         if (!isSelected)
@@ -234,7 +409,7 @@ export default function MessagingOverlay({
                       <div className="relative shrink-0">
                         <div
                           className="w-11 h-11 rounded-full flex items-center justify-center text-xl"
-                          style={{ background: "rgba(58,134,198,0.25)" }}
+                          style={{ background: "rgba(37,99,235,0.3)" }}
                         >
                           {contactProfile?.avatar ?? "👤"}
                         </div>
@@ -243,6 +418,7 @@ export default function MessagingOverlay({
                           style={{
                             background: "#22c55e",
                             border: "2px solid rgba(14,22,34,0.9)",
+                            boxShadow: "0 0 8px #22c55e",
                           }}
                         />
                       </div>
@@ -268,17 +444,17 @@ export default function MessagingOverlay({
             {/* New chat button */}
             <div
               className="p-3"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ borderTop: "1px solid rgba(100,150,255,0.12)" }}
             >
               <button
                 type="button"
                 data-ocid="messaging.new_chat.button"
                 onClick={() => setShowNewChat(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:brightness-110"
                 style={{
-                  background:
-                    "linear-gradient(90deg, rgba(58,134,198,0.5), rgba(37,99,235,0.5))",
-                  border: "1px solid rgba(58,134,198,0.4)",
+                  background: "linear-gradient(90deg, #1e40af, #2563eb)",
+                  border: "1px solid rgba(59,130,246,0.4)",
+                  boxShadow: "0 4px 20px rgba(37,99,235,0.4)",
                   minHeight: "44px",
                 }}
               >
@@ -287,7 +463,7 @@ export default function MessagingOverlay({
             </div>
           </div>
 
-          {/* Right chat panel — hidden on mobile when list is shown */}
+          {/* Right chat panel */}
           <div
             className={`${
               mobileView === "list" ? "hidden" : "flex"
@@ -298,10 +474,13 @@ export default function MessagingOverlay({
                 {/* Chat header */}
                 <div
                   className="flex items-center justify-between px-3 md:px-5 py-3 shrink-0"
-                  style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}
+                  style={{
+                    borderBottom: "1px solid rgba(100,150,255,0.12)",
+                    background:
+                      "linear-gradient(180deg, rgba(15,28,55,0.95) 0%, rgba(10,20,40,0.8) 100%)",
+                  }}
                 >
                   <div className="flex items-center gap-2 md:gap-3">
-                    {/* Back button — mobile only */}
                     <button
                       type="button"
                       data-ocid="messaging.back.button"
@@ -313,7 +492,7 @@ export default function MessagingOverlay({
                     </button>
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0"
-                      style={{ background: "rgba(58,134,198,0.25)" }}
+                      style={{ background: "rgba(37,99,235,0.3)" }}
                     >
                       {selectedProfile?.avatar ?? "👤"}
                     </div>
@@ -321,7 +500,15 @@ export default function MessagingOverlay({
                       <p className="text-sm font-semibold text-white">
                         {selectedProfile?.displayName ?? "Unknown"}
                       </p>
-                      <p className="text-xs text-green-400">Online</p>
+                      <p
+                        className="text-xs font-medium"
+                        style={{
+                          color: "#4ade80",
+                          textShadow: "0 0 8px rgba(74,222,128,0.5)",
+                        }}
+                      >
+                        Online
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 md:gap-2">
@@ -343,7 +530,6 @@ export default function MessagingOverlay({
                     >
                       <MoreVertical className="w-4 h-4 text-blue-300" />
                     </button>
-                    {/* Close button — visible on desktop in chat view */}
                     <button
                       type="button"
                       data-ocid="messaging.chat.close_button"
@@ -355,51 +541,86 @@ export default function MessagingOverlay({
                   </div>
                 </div>
 
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3">
+                {/* Messages area with wallpaper */}
+                <div
+                  className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"
+                  style={{
+                    backgroundImage:
+                      "url(/assets/uploads/IMG_20260318_225325_285-1.jpg)",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                  }}
+                >
                   {messages.length === 0 ? (
                     <div
                       data-ocid="messaging.messages.empty_state"
                       className="flex items-center justify-center h-full"
                     >
-                      <p className="text-blue-500 text-sm">
+                      <p className="text-blue-300 text-sm">
                         Send a message to start the conversation
                       </p>
                     </div>
                   ) : (
-                    messages.map((msg: Message, idx: number) => {
+                    (messages as MessageWithRead[]).map((msg, idx) => {
                       const isOut = msg.sender.toString() === selfPrincipal;
+                      const fileData = decodeFileMessage(msg.content);
+                      const isOptimistic =
+                        msg._optimistic === true ||
+                        (isOut && msg.isRead === undefined);
                       return (
                         <div
                           key={`${msg.sender.toString()}-${String(msg.timestamp)}-${idx}`}
                           data-ocid={`messaging.message.item.${idx + 1}`}
-                          className={`flex ${isOut ? "justify-end" : "justify-start"}`}
+                          className={`flex ${
+                            isOut ? "justify-end" : "justify-start"
+                          }`}
                         >
                           <div className="max-w-[80%] md:max-w-[70%]">
                             <div
                               className="px-4 py-2.5 rounded-2xl text-sm leading-relaxed"
                               style={{
                                 background: isOut
-                                  ? "oklch(0.63 0.15 155)"
-                                  : "oklch(0.92 0.01 230)",
-                                color: isOut ? "white" : "oklch(0.18 0.03 240)",
+                                  ? "rgba(30, 80, 45, 0.9)"
+                                  : "rgba(15, 30, 55, 0.9)",
+                                color: isOut
+                                  ? "rgba(220, 255, 230, 0.95)"
+                                  : "rgba(200, 225, 255, 0.95)",
                                 borderBottomRightRadius: isOut
                                   ? "4px"
                                   : undefined,
                                 borderBottomLeftRadius: !isOut
                                   ? "4px"
                                   : undefined,
+                                boxShadow: isOut
+                                  ? "0 2px 12px rgba(0,80,30,0.3)"
+                                  : "0 2px 12px rgba(0,20,60,0.3)",
                               }}
                             >
-                              {msg.content}
+                              {fileData ? (
+                                <FileMessageBubble
+                                  fileUrl={fileData.url}
+                                  filename={fileData.filename}
+                                />
+                              ) : (
+                                msg.content
+                              )}
                             </div>
-                            <p
-                              className={`text-xs text-blue-500 mt-1 ${
-                                isOut ? "text-right" : "text-left"
+                            <div
+                              className={`flex items-center gap-1 mt-1 ${
+                                isOut ? "justify-end" : "justify-start"
                               }`}
                             >
-                              {formatTime(msg.timestamp)}
-                            </p>
+                              <p className="text-xs text-blue-400">
+                                {formatTime(msg.timestamp)}
+                              </p>
+                              {isOut && (
+                                <ReadTick
+                                  isRead={msg.isRead}
+                                  isOptimistic={isOptimistic}
+                                />
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -409,45 +630,107 @@ export default function MessagingOverlay({
                 </div>
 
                 {/* Composer */}
-                <form
-                  onSubmit={handleSend}
-                  className="flex items-center gap-2 md:gap-3 p-3 md:p-4 shrink-0"
-                  style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
+                <div
+                  className="shrink-0"
+                  style={{
+                    borderTop: "1px solid rgba(100,150,255,0.12)",
+                    background: "rgba(10,18,32,0.95)",
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 hover:bg-white/10 transition-colors"
+                  {/* File attachment preview */}
+                  {attachedFile && (
+                    <div className="flex items-center gap-2 px-3 md:px-4 pt-2.5 pb-1">
+                      <div
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-white"
+                        style={{
+                          background: "rgba(37,99,235,0.2)",
+                          border: "1px solid rgba(59,130,246,0.4)",
+                        }}
+                      >
+                        {attachedFile.type.startsWith("image/") ? (
+                          <ImageIcon className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                        ) : (
+                          <Paperclip className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                        )}
+                        <span className="truncate max-w-[180px]">
+                          {attachedFile.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedFile(null)}
+                          className="ml-1 hover:text-red-400 transition-colors"
+                          aria-label="Remove attachment"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleSend}
+                    className="flex items-center gap-2 md:gap-3 p-3 md:p-4"
                   >
-                    <Plus className="w-4 h-4 text-blue-400" />
-                  </button>
-                  <input
-                    data-ocid="messaging.message.input"
-                    type="text"
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="Type a message…"
-                    className="flex-1 px-4 py-2.5 rounded-xl text-sm text-white placeholder:text-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    style={{
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      fontSize: "16px",
-                    }}
-                  />
-                  <button
-                    data-ocid="messaging.message.send_button"
-                    type="submit"
-                    disabled={!messageText.trim() || sendMessage.isPending}
-                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all disabled:opacity-40"
-                    style={{ background: "oklch(0.63 0.15 155)" }}
-                  >
-                    <Send className="w-4 h-4 text-white" />
-                  </button>
-                </form>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 hover:bg-white/10 transition-colors"
+                      aria-label="Attach file"
+                    >
+                      <Paperclip className="w-4 h-4 text-blue-400" />
+                    </button>
+                    <input
+                      data-ocid="messaging.message.input"
+                      type="text"
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      placeholder={
+                        attachedFile ? "Add a caption…" : "Type a message…"
+                      }
+                      className="flex-1 px-4 py-2.5 rounded-xl text-sm text-white placeholder:text-blue-500 focus:outline-none"
+                      style={{
+                        background: "rgba(255,255,255,0.08)",
+                        border: "1px solid rgba(100,150,255,0.18)",
+                        fontSize: "16px",
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      data-ocid="messaging.message.send_button"
+                      type="submit"
+                      disabled={
+                        (!messageText.trim() && !attachedFile) || isSending
+                      }
+                      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all disabled:opacity-40 hover:brightness-110"
+                      style={{
+                        background: "linear-gradient(135deg, #1d4ed8, #2563eb)",
+                        boxShadow: "0 4px 14px rgba(37,99,235,0.45)",
+                      }}
+                    >
+                      {isSending ? (
+                        <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4 text-white" />
+                      )}
+                    </button>
+                  </form>
+                </div>
               </>
             ) : (
               <div
                 data-ocid="messaging.chat.empty_state"
                 className="flex-1 flex items-center justify-center"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(10,22,45,1) 0%, rgba(13,31,60,1) 40%, rgba(14,34,64,1) 70%, rgba(8,16,32,1) 100%)",
+                }}
               >
                 <div className="text-center">
                   <p className="text-5xl mb-4">⛈️</p>
@@ -485,14 +768,15 @@ function OverlayShell({
     <div
       className="fixed inset-0 z-50 flex items-stretch messaging-overlay-enter"
       data-ocid="messaging.modal"
-      style={{ background: "rgba(8,14,24,0.9)", backdropFilter: "blur(20px)" }}
+      style={{ background: "rgba(6,10,20,0.92)", backdropFilter: "blur(24px)" }}
     >
       <div
         className="flex-1 flex flex-col md:m-8 rounded-none md:rounded-2xl overflow-hidden"
         style={{
-          background: "rgba(14,22,34,0.97)",
-          border: "1px solid rgba(255,255,255,0.1)",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+          background: "rgba(12,20,36,0.98)",
+          border: "1px solid rgba(100,150,255,0.14)",
+          boxShadow:
+            "0 24px 80px rgba(0,0,0,0.7), 0 0 60px rgba(30,60,120,0.2)",
         }}
       >
         {children}

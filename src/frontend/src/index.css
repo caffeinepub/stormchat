@@ -99,6 +99,44 @@
   }
 }
 
+/* Lightning flash */
+@keyframes lightning {
+  0%,
+  94%,
+  100% {
+    opacity: 0;
+  }
+  95% {
+    opacity: 0.7;
+  }
+  96% {
+    opacity: 0;
+  }
+  97.5% {
+    opacity: 0.45;
+  }
+  98.5% {
+    opacity: 0;
+  }
+}
+
+/* Aurora orb drift */
+@keyframes auroraDrift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.7;
+  }
+  33% {
+    transform: translate(60px, 40px) scale(1.08);
+    opacity: 0.85;
+  }
+  66% {
+    transform: translate(-30px, 60px) scale(0.96);
+    opacity: 0.75;
+  }
+}
+
 @keyframes slideInRight {
   from {
     transform: translateX(100%);
@@ -140,15 +178,25 @@
   animation: float 4s ease-in-out infinite;
 }
 
+.lightning-bolt {
+  animation: lightning 8s ease-in-out infinite;
+}
+
+.aurora-orb {
+  animation: auroraDrift 20s ease-in-out infinite;
+}
+
 .messaging-overlay-enter {
   animation: fadeInUp 0.35s ease-out forwards;
 }
 
+/* Dark glassmorphism forecast cards */
 .forecast-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .forecast-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  transform: translateY(-5px);
+  border-color: rgba(100, 180, 255, 0.5) !important;
+  box-shadow: 0 8px 32px rgba(60, 120, 220, 0.25);
 }
