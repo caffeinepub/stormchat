@@ -7,13 +7,13 @@ import Time "mo:core/Time";
 import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
-import Migration "migration";
+
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 import MixinStorage "blob-storage/Mixin";
 
 // IMPORTANT: See migration.mo for upgrade migration
-(with migration = Migration.run)
+
 actor {
   // Core Types
   public type StoredMessage = {

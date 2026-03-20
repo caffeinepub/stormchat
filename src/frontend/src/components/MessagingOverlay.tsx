@@ -167,8 +167,15 @@ export default function MessagingOverlay({
     null,
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevConvTimestampsRef = useRef<Map<string, bigint>>(new Map());
+  const notifInitializedRef = useRef(false);
+  // Smart scroll state
+  const isAtBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
+  const prevSelectedPartyRef = useRef<Principal | null>(null);
 
   const { data: conversations = [] } = useGetConversations(!!profile);
   const { data: messages = [] } = useGetMessages(
@@ -257,10 +264,34 @@ export default function MessagingOverlay({
     };
   }, [identity]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ref.current is stable
+  // Smart scroll: only auto-scroll when appropriate
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs are stable, selfPrincipal is derived from identity
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const conversationChanged =
+      prevSelectedPartyRef.current?.toString() !== selectedParty?.toString();
+    const prevCount = prevMessageCountRef.current;
+    const newCount = messages.length;
+    const hasNewMessages = newCount > prevCount;
+
+    if (conversationChanged) {
+      // Always jump to bottom when switching conversations
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      isAtBottomRef.current = true;
+    } else if (hasNewMessages) {
+      const lastMsg = messages[messages.length - 1] as
+        | MessageWithRead
+        | undefined;
+      const lastMsgIsMine = lastMsg?.sender.toString() === selfPrincipal;
+
+      if (lastMsgIsMine || isAtBottomRef.current) {
+        // Scroll to bottom if user sent the message OR user is already at bottom
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+
+    prevSelectedPartyRef.current = selectedParty;
+    prevMessageCountRef.current = newCount;
+  }, [messages, selectedParty]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: markAsRead.mutate is stable reference
   useEffect(() => {
@@ -268,6 +299,60 @@ export default function MessagingOverlay({
       markAsRead.mutate(selectedParty);
     }
   }, [selectedParty, messages.length]);
+
+  // Request notification permission when profile is set
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally runs only when profile presence changes
+  useEffect(() => {
+    if (!profile) return;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, [!!profile]);
+
+  // Fire browser notifications when new messages arrive in non-active conversations
+  useEffect(() => {
+    if (!profile || conversations.length === 0) return;
+
+    const map = prevConvTimestampsRef.current;
+
+    if (!notifInitializedRef.current) {
+      // First load: seed the map without firing notifications
+      for (const conv of conversations) {
+        map.set(conv.otherParty.toString(), conv.lastMessageTimestamp);
+      }
+      notifInitializedRef.current = true;
+      return;
+    }
+
+    for (const conv of conversations) {
+      const key = conv.otherParty.toString();
+      const prev = map.get(key);
+
+      if (prev !== undefined && conv.lastMessageTimestamp > prev) {
+        // New message arrived in this conversation
+        const isActiveChat = selectedParty?.toString() === key;
+        if (
+          !isActiveChat &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          const userEntry = allUsers.find(([p]) => p.toString() === key);
+          const senderName = userEntry?.[1]?.displayName ?? "Someone";
+          const preview = conv.lastMessagePreview || "New message";
+          try {
+            new Notification(senderName, {
+              body: preview,
+              icon: "/favicon.ico",
+            });
+          } catch {
+            // Notification API not available in this context
+          }
+        }
+      }
+
+      map.set(key, conv.lastMessageTimestamp);
+    }
+  }, [conversations, profile, selectedParty, allUsers]);
 
   function handleSelectConversation(conv: Conversation) {
     setSelectedParty(conv.otherParty);
@@ -669,7 +754,14 @@ export default function MessagingOverlay({
 
                 {/* Messages area with wallpaper */}
                 <div
+                  ref={messagesContainerRef}
                   className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"
+                  onScroll={() => {
+                    const el = messagesContainerRef.current;
+                    if (!el) return;
+                    isAtBottomRef.current =
+                      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                  }}
                   style={{
                     backgroundImage:
                       "url(/assets/uploads/IMG_20260318_225325_285-1.jpg)",
